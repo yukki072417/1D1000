@@ -4,7 +4,66 @@ import { signInAnonymously } from 'firebase/auth';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { auth, db, collections } from '../firebase';
 import type { HistoryItem } from '../types';
-import { getTodayDate, rollDice, getClientIp, sanitizeIp, getDeviceFingerprint } from '../utils/dice';
+import { getTodayDate, rollDice, getDeviceFingerprint } from '../utils/dice';
+
+// 端末ローカルの最終ロール日を保存する localStorage キー
+const LOCAL_LAST_ROLL_KEY = 'lastRollDate';
+
+// 本日すでにロール済みかを判定する。
+// 制限の本体はデバイスフィンガープリント（端末ごとに 1 日 1 回）。
+// localStorage はフィンガープリント取得に失敗する端末向けの保険。
+// users コレクションは判定に使わず、履歴・結果の保存専用とする。
+const checkRolledToday = async (
+  today: string,
+  cachedFp: string | null = null
+): Promise<{ rolledToday: boolean; fingerprint: string | null }> => {
+
+  // 制限の本体：デバイスフィンガープリント
+  const fp = cachedFp ?? (await getDeviceFingerprint());
+  if (fp) {
+    const fpDocSnap = await getDoc(doc(db, collections.fingerprints, fp));
+    if (fpDocSnap.exists() && fpDocSnap.data()?.lastRollDate === today) {
+      return { rolledToday: true, fingerprint: fp };
+    }
+  }
+
+  // 保険：端末ローカル（localStorage）
+  if (localStorage.getItem(LOCAL_LAST_ROLL_KEY) === today) {
+    return { rolledToday: true, fingerprint: cachedFp };
+  }
+
+  return { rolledToday: false, fingerprint: fp };
+};
+
+// ロール結果を保存する。
+// localStorage（保険）・Firestore の users（履歴・結果の保存専用）・
+// fingerprint（制限の本体）の 3 か所へまとめて書き込む。
+const saveRollResult = async (
+  uid: string,
+  fp: string | null,
+  today: string,
+  resultString: string
+): Promise<void> => {
+  // 端末ローカル（localStorage）にロール日を保存（保険）
+  localStorage.setItem(LOCAL_LAST_ROLL_KEY, today);
+
+  // Firestore（users）に履歴・結果を保存
+  await setDoc(doc(db, collections.users, uid), {
+    lastRollDate: today,
+    lastRollResult: resultString,
+    updatedAt: Timestamp.now()
+  }, { merge: true });
+
+  // Firestore（fingerprint）に端末単位のロール情報を保存
+  if (fp) {
+    await setDoc(doc(db, collections.fingerprints, fp), {
+      lastRollDate: today,
+      lastRollResult: resultString,
+      lastUid: uid,
+      updatedAt: Timestamp.now()
+    }, { merge: true });
+  }
+};
 
 export const useDice = () => {
   const [number, setNumber] = useState<string[]>(['0', '0', '0', '0']);
@@ -13,7 +72,6 @@ export const useDice = () => {
   const [showHistory, setShowHistory] = useState<boolean>(true);
   const [hasRolledToday, setHasRolledToday] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [clientIp, setClientIp] = useState<string | null>(null);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,7 +82,7 @@ export const useDice = () => {
         const userCredential = await signInAnonymously(auth);
         const user = userCredential.user;
 
-        // ユーザードキュメントの取得または作成
+        // ユーザードキュメントの取得または作成（users は履歴・結果の保存専用）
         const userDocRef = doc(db, collections.users, user.uid);
         const userDocSnap = await getDoc(userDocRef);
         const today = getTodayDate();
@@ -35,35 +93,12 @@ export const useDice = () => {
             createdAt: Timestamp.now(),
             lastRollDate: null
           });
-        } else {
-          // 既存ユーザーの場合、今日振ったか確認
-          const userData = userDocSnap.data();
-          if (userData?.lastRollDate === today) {
-            setHasRolledToday(true);
-          }
         }
 
-        // IP アドレス単位での制限チェック
-        const ip = await getClientIp();
-        if (ip) {
-          setClientIp(ip);
-          const ipDocRef = doc(db, collections.ips, sanitizeIp(ip));
-          const ipDocSnap = await getDoc(ipDocRef);
-          if (ipDocSnap.exists() && ipDocSnap.data()?.lastRollDate === today) {
-            setHasRolledToday(true);
-          }
-        }
-
-        // デバイスフィンガープリント単位での制限チェック
-        const fp = await getDeviceFingerprint();
-        if (fp) {
-          setFingerprint(fp);
-          const fpDocRef = doc(db, collections.fingerprints, fp);
-          const fpDocSnap = await getDoc(fpDocRef);
-          if (fpDocSnap.exists() && fpDocSnap.data()?.lastRollDate === today) {
-            setHasRolledToday(true);
-          }
-        }
+        // 本日ロール済みかを判定（fingerprint が本体、localStorage は保険）
+        const { rolledToday, fingerprint: fp } = await checkRolledToday(today);
+        if (fp) setFingerprint(fp);
+        if (rolledToday) setHasRolledToday(true);
 
         // クッキーからキャッシュを読み込み
         const savedShowHistory = Cookies.get('showHistory');
@@ -102,37 +137,17 @@ export const useDice = () => {
     const today = getTodayDate();
 
     try {
-      // IP アドレス単位で本日のロール済みを厳密にチェック
-      const ip = clientIp ?? (await getClientIp());
-      let ipDocRef = null;
-      if (ip) {
-        if (!clientIp) setClientIp(ip);
-        ipDocRef = doc(db, collections.ips, sanitizeIp(ip));
-        const ipDocSnap = await getDoc(ipDocRef);
-        if (ipDocSnap.exists() && ipDocSnap.data()?.lastRollDate === today) {
-          // 同一 IP から本日すでにロール済み
-          setHasRolledToday(true);
-          return;
-        }
-      }
-
-      // デバイスフィンガープリント単位で本日のロール済みをチェック
-      const fp = fingerprint ?? (await getDeviceFingerprint());
-      let fpDocRef = null;
-      if (fp) {
-        if (!fingerprint) setFingerprint(fp);
-        fpDocRef = doc(db, collections.fingerprints, fp);
-        const fpDocSnap = await getDoc(fpDocRef);
-        if (fpDocSnap.exists() && fpDocSnap.data()?.lastRollDate === today) {
-          // 同一デバイスから本日すでにロール済み
-          setHasRolledToday(true);
-          return;
-        }
+      // 本日ロール済みかを判定（fingerprint が本体、localStorage は保険）
+      const { rolledToday, fingerprint: fp } = await checkRolledToday(today, fingerprint);
+      if (fp && !fingerprint) setFingerprint(fp);
+      if (rolledToday) {
+        setHasRolledToday(true);
+        return;
       }
 
       const num = rollDice();
 
-      if (num[2] === '1' && num[1] === '0' && num[0] === '0') {
+      if (num[3] === '1' && num[2] === '0' && num[1] === '0' && num[0] === '0') {
         setEnd(true);
       }
 
@@ -146,32 +161,8 @@ export const useDice = () => {
 
       const isFirstToday = !lastRollDate || lastRollDate !== today;
 
-      // Firestore にロール情報を保存
-      await setDoc(userDocRef, {
-        lastRollDate: today,
-        lastRollResult: resultString,
-        updatedAt: Timestamp.now()
-      }, { merge: true });
-
-      // IP アドレス単位のロール情報を保存
-      if (ipDocRef) {
-        await setDoc(ipDocRef, {
-          lastRollDate: today,
-          lastRollResult: resultString,
-          lastUid: user.uid,
-          updatedAt: Timestamp.now()
-        }, { merge: true });
-      }
-
-      // デバイスフィンガープリント単位のロール情報を保存
-      if (fpDocRef) {
-        await setDoc(fpDocRef, {
-          lastRollDate: today,
-          lastRollResult: resultString,
-          lastUid: user.uid,
-          updatedAt: Timestamp.now()
-        }, { merge: true });
-      }
+      // ロール結果を localStorage と Firestore（users / fingerprint）に保存
+      await saveRollResult(user.uid, fp, today, resultString);
 
       // クッキーにキャッシュ保存
       const newCookieHistoryItem = {

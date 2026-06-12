@@ -20,6 +20,5 @@ export const db = getFirestore(app);
 const isDev = import.meta.env.VITE_PRODUCT_MODE === 'DEV';
 export const collections = {
   users: isDev ? 'users-dev' : 'users',
-  ips: isDev ? 'ips-dev' : 'ips',
   fingerprints: isDev ? 'fingerprints-dev' : 'fingerprints',
 };

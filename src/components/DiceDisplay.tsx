@@ -1,6 +1,3 @@
-import { IoMdClipboard } from 'react-icons/io';
-import { copyToClipboard } from '../utils/dice';
-
 interface DiceDisplayProps {
   number: string[];
   isEnd: boolean;
@@ -13,7 +10,7 @@ function DiceDisplay({ number, isEnd, hasRolledToday, isLoading, onRoll }: DiceD
   return (
     <div className='flex-1 flex justify-center items-center p-4 md:p-0'>
       <div className='flex flex-col items-center gap-4'>
-        <h2 className='text-xl sm:text-2xl md:text-3xl text-center'>ゆっきー製1D1000</h2>
+        <h2 className='text-xl sm:text-2xl md:text-3xl text-center'>ゆっきー製1D10000</h2>
         <div className='flex flex-col sm:flex-row items-center gap-4'>
           <div className='grid grid-cols-4 gap-2 sm:gap-4'>
             {number.map((digit, index) => (
@@ -25,12 +22,6 @@ function DiceDisplay({ number, isEnd, hasRolledToday, isLoading, onRoll }: DiceD
               </div>
             ))}
           </div>
-          <button
-            onClick={() => copyToClipboard(number.join(''))}
-            className='px-3 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600'
-          >
-            <IoMdClipboard />
-          </button>
         </div>
         {isEnd ? null : hasRolledToday ? (
           <div className='text-center'>
