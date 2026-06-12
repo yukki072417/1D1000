@@ -15,3 +15,11 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// 環境ごとにコレクションを分離する（DEV のときは "-dev" サフィックスを付与）
+const isDev = import.meta.env.VITE_PRODUCT_MODE === 'DEV';
+export const collections = {
+  users: isDev ? 'users-dev' : 'users',
+  ips: isDev ? 'ips-dev' : 'ips',
+  fingerprints: isDev ? 'fingerprints-dev' : 'fingerprints',
+};
