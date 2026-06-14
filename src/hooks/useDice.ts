@@ -66,7 +66,7 @@ const saveRollResult = async (
 };
 
 export const useDice = () => {
-  const [number, setNumber] = useState<string[]>(['0', '0', '0', '0']);
+  const [number, setNumber] = useState<string[]>(['0', '0', '0', '0', '0']);
   const [isEnd, setEnd] = useState<boolean>(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(true);
@@ -147,7 +147,7 @@ export const useDice = () => {
 
       const num = rollDice();
 
-      if (num[3] === '1' && num[2] === '0' && num[1] === '0' && num[0] === '0') {
+      if (num[4] === '1' && num[3] === '0' && num[2] === '0' && num[1] === '0' && num[0] === '0') {
         setEnd(true);
       }
 

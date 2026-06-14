@@ -12,7 +12,7 @@ function DiceDisplay({ number, isEnd, hasRolledToday, isLoading, onRoll }: DiceD
       <div className='flex flex-col items-center gap-4'>
         <h2 className='text-xl sm:text-2xl md:text-3xl text-center'>ゆっきー製1D10000</h2>
         <div className='flex flex-col sm:flex-row items-center gap-4'>
-          <div className='grid grid-cols-4 gap-2 sm:gap-4'>
+          <div className='grid grid-cols-5 gap-2 sm:gap-4'>
             {number.map((digit, index) => (
               <div
                 key={index}

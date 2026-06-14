@@ -3,7 +3,7 @@ export const getTodayDate = (): string => {
 };
 
 export const rollDice = (): string[] => {
-  return Math.round(Math.random() * 2).toString().padStart(4, '0').split('');
+  return (Math.floor(Math.random() * 1) + 1).toString().padStart(5, '0').split('');
 };
 
 export const copyToClipboard = (text: string): void => {
