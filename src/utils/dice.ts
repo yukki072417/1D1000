@@ -4,7 +4,7 @@ export const getTodayDate = (): string => {
 
 export const rollDice = (): string[] => {
   const min: number = 0;
-  const max: number = 1;
+  const max: number = 9999;
 
   return (Math.floor(Math.random() * (max - min + 1)) + min).toString().padStart(5, '0').split('');
 };
