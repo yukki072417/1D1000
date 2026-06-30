@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 interface DiceDisplayProps {
   number: string[];
   isEnd: boolean;
@@ -7,6 +9,12 @@ interface DiceDisplayProps {
 }
 
 function DiceDisplay({ number, isEnd, hasRolledToday, isLoading, onRoll }: DiceDisplayProps) {
+  useEffect(() => {
+    if (isEnd) {
+      new Audio('/sounds/daigakuka.mp3').play().catch(() => {});
+    }
+  }, [isEnd]);
+
   return (
     <div className='flex-1 flex justify-center items-center p-4 md:p-0'>
       <div className='flex flex-col items-center gap-4'>
