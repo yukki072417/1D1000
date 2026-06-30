@@ -16,6 +16,8 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+export const isDevMode = import.meta.env.VITE_ENV_MODE === 'DEV';
+
 // 環境ごとにコレクションを分離する（DEV のときは "-dev" サフィックスを付与）
 const isDev = import.meta.env.VITE_PRODUCT_MODE === 'DEV';
 export const collections = {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Cookies from 'js-cookie';
 import { signInAnonymously } from 'firebase/auth';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
-import { auth, db, collections } from '../firebase';
+import { auth, db, collections, isDevMode } from '../firebase';
 import type { HistoryItem } from '../types';
 import { getTodayDate, rollDice, getDeviceFingerprint } from '../utils/dice';
 
@@ -17,6 +17,11 @@ const checkRolledToday = async (
   today: string,
   cachedFp: string | null = null
 ): Promise<{ rolledToday: boolean; fingerprint: string | null }> => {
+
+  if (isDevMode) {
+    const rolledToday = localStorage.getItem(LOCAL_LAST_ROLL_KEY) === today;
+    return { rolledToday, fingerprint: null };
+  }
 
   // 制限の本体：デバイスフィンガープリント
   const fp = cachedFp ?? (await getDeviceFingerprint());
@@ -44,6 +49,8 @@ const saveRollResult = async (
   today: string,
   resultString: string
 ): Promise<void> => {
+  if (isDevMode) return;
+
   // 端末ローカル（localStorage）にロール日を保存（保険）
   localStorage.setItem(LOCAL_LAST_ROLL_KEY, today);
 
@@ -78,21 +85,24 @@ export const useDice = () => {
     const initializeApp = async () => {
       try {
         setIsLoading(true);
-        // Firebase 匿名認証
-        const userCredential = await signInAnonymously(auth);
-        const user = userCredential.user;
-
-        // ユーザードキュメントの取得または作成（users は履歴・結果の保存専用）
-        const userDocRef = doc(db, collections.users, user.uid);
-        const userDocSnap = await getDoc(userDocRef);
         const today = getTodayDate();
 
-        if (!userDocSnap.exists()) {
-          // 初回ユーザーの場合、ドキュメント作成
-          await setDoc(userDocRef, {
-            createdAt: Timestamp.now(),
-            lastRollDate: null
-          });
+        if (!isDevMode) {
+          // Firebase 匿名認証
+          const userCredential = await signInAnonymously(auth);
+          const user = userCredential.user;
+
+          // ユーザードキュメントの取得または作成（users は履歴・結果の保存専用）
+          const userDocRef = doc(db, collections.users, user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (!userDocSnap.exists()) {
+            // 初回ユーザーの場合、ドキュメント作成
+            await setDoc(userDocRef, {
+              createdAt: Timestamp.now(),
+              lastRollDate: null
+            });
+          }
         }
 
         // 本日ロール済みかを判定（fingerprint が本体、localStorage は保険）
@@ -129,7 +139,7 @@ export const useDice = () => {
 
   const randomNumber = async () => {
     const user = auth.currentUser;
-    if (!user) {
+    if (!isDevMode && !user) {
       console.error('ユーザーが認証されていません');
       return;
     }
@@ -151,18 +161,23 @@ export const useDice = () => {
         setEnd(true);
       }
 
+       if (num[4] === '0' && num[3] === '0' && num[2] === '0' && num[1] === '0' && num[0] === '0') {
+        num[0] = '1'
+      }
+
       const resultString = num.join('');
 
-      // Firestore からユーザー情報を取得して初回判定
-      const userDocRef = doc(db, collections.users, user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      const userData = userDocSnap.data();
-      const lastRollDate = userData?.lastRollDate;
-
-      const isFirstToday = !lastRollDate || lastRollDate !== today;
+      let isFirstToday = true;
+      if (!isDevMode && user) {
+        // Firestore からユーザー情報を取得して初回判定
+        const userDocRef = doc(db, collections.users, user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        const lastRollDate = userDocSnap.data()?.lastRollDate;
+        isFirstToday = !lastRollDate || lastRollDate !== today;
+      }
 
       // ロール結果を localStorage と Firestore（users / fingerprint）に保存
-      await saveRollResult(user.uid, fp, today, resultString);
+      await saveRollResult(user?.uid ?? 'dev', fp, today, resultString);
 
       // クッキーにキャッシュ保存
       const newCookieHistoryItem = {
